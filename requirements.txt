@@ -1,0 +1,13 @@
+# Core dependencies
+azure-storage-blob>=12.19.0
+python-dotenv>=1.0.0
+click>=8.1.0
+tqdm>=4.66.0
+
+# FastAPI dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Development dependencies (optional)
+# Install with: pip install -r requirements-dev.txt

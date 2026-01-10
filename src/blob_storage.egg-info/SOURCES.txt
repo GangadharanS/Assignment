@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/blob_storage/__init__.py
+src/blob_storage/api.py
+src/blob_storage/cli.py
+src/blob_storage/config.py
+src/blob_storage/storage.py
+src/blob_storage.egg-info/PKG-INFO
+src/blob_storage.egg-info/SOURCES.txt
+src/blob_storage.egg-info/dependency_links.txt
+src/blob_storage.egg-info/entry_points.txt
+src/blob_storage.egg-info/requires.txt
+src/blob_storage.egg-info/top_level.txt
+tests/test_api.py
+tests/test_storage.py

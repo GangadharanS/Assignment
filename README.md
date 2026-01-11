@@ -13,6 +13,7 @@ ollama pull llama3.2
 
 # 2. Run the application
 cd assignment
+source venv/bin/activate
 docker compose -f docker-compose.simple.yml up -d
 
 # 3. Upload a document

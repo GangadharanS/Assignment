@@ -1,3 +1,0 @@
-[console_scripts]
-blob-storage = blob_storage.cli:main
-blob-storage-api = blob_storage.api:run_server

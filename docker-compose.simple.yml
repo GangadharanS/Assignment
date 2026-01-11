@@ -1,0 +1,30 @@
+# Simple docker-compose for quick start
+# Usage: docker compose -f docker-compose.simple.yml up
+#
+# Note: This version requires Ollama to be running on your host machine.
+# If you want everything containerized, use docker-compose.yml instead.
+
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-app
+    ports:
+      - "8080:8000"
+    environment:
+      - STORAGE_MODE=local
+      - LOCAL_STORAGE_PATH=/app/data/storage
+      # Use host Ollama (run: ollama serve on host)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3.2
+    volumes:
+      - ./data/storage:/app/data/storage
+      - ./data/vector_db:/app/data/vector_db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+

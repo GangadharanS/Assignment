@@ -136,3 +136,4 @@ class TestGetBlobStorage:
         with pytest.raises(ValueError, match="Unknown storage mode"):
             get_blob_storage("invalid")
 
+

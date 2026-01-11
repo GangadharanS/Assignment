@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Main RAG Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-app
+    ports:
+      - "8080:8000"  # External port 8080
+    environment:
+      - STORAGE_MODE=local
+      - LOCAL_STORAGE_PATH=/app/data/storage
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=tinyllama
+    volumes:
+      # Persist all app data (storage + vector database)
+      - app_data:/app/data
+    depends_on:
+      ollama:
+        condition: service_started  # Changed from service_healthy to avoid startup issues
+    networks:
+      - rag-network
+    restart: unless-stopped
+    # App will retry connecting to Ollama, so no strict health dependency needed
+
+  # Ollama LLM Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-server
+    ports:
+      - "11435:11434"  # Using 11435 to avoid conflict with host Ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - rag-network
+    restart: unless-stopped
+    # Note: Removed healthcheck as ollama image doesn't have curl
+    # The app handles connection retries gracefully
+
+  # Model puller - pulls the LLM model after Ollama starts
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: ollama-pull
+    depends_on:
+      - ollama
+    networks:
+      - rag-network
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Ollama to be ready..."
+        sleep 10
+        echo "Pulling tinyllama model..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull tinyllama
+        echo "Model pulled successfully!"
+    restart: "no"
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  app_data:
+    name: rag-app-data
+  ollama_data:
+    name: ollama-data

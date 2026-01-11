@@ -1,333 +1,312 @@
-# Blob Storage
+# RAG Document Assistant
 
-A Python library for uploading and managing documents in local blob storage. Supports both **Azurite** (Azure Storage Emulator) and **local filesystem** storage.
+A conversational AI that answers questions about your documents using Retrieval-Augmented Generation.
 
-## Features
+---
 
-- 📤 Upload documents via CLI or REST API
-- 📥 Download documents from storage
-- 📋 List all stored documents
-- 🗑️ Delete documents
-- 📁 Create custom containers
-- 🔄 Two storage backends: Azurite or Local Filesystem
-- 🌐 **REST API** with FastAPI and interactive docs
-
-## Project Structure
-
-```
-blob-storage/
-├── src/
-│   └── blob_storage/
-│       ├── __init__.py      # Package exports
-│       ├── config.py        # Configuration module
-│       ├── storage.py       # Storage implementations
-│       ├── cli.py           # CLI application
-│       └── api.py           # FastAPI REST API
-├── tests/
-│   ├── __init__.py
-│   ├── test_storage.py      # Storage unit tests
-│   └── test_api.py          # API integration tests
-├── pyproject.toml           # Project configuration
-├── requirements.txt         # Core dependencies
-├── requirements-dev.txt     # Development dependencies
-├── env.example              # Environment template
-└── README.md
-```
-
-## Installation
-
-### From Source (Development)
+## Quick Setup Instructions
 
 ```bash
-# Clone the repository
-cd blob-storage
+# 1. Start Ollama (required for LLM)
+ollama serve
+ollama pull llama3.2
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# 2. Run the application
+cd assignment
+docker compose -f docker-compose.simple.yml up -d
 
-# Install in development mode
-pip install -e ".[dev]"
+# 3. Upload a document
+curl -X POST http://localhost:8080/upload -F 'file=@your-document.pdf'
+
+# 4. Ask questions
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is this document about?"}'
 ```
 
-### Dependencies Only
+**API Docs:** http://localhost:8080/docs
 
-```bash
-pip install -r requirements.txt
+---
+
+## Architecture Overview
+
 ```
-
-## Configuration
-
-Copy `env.example` to `.env` and customize:
-
-```bash
-cp env.example .env
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `STORAGE_MODE` | `azurite` | Storage backend: `azurite` or `local` |
-| `AZURE_STORAGE_CONNECTION_STRING` | (Azurite default) | Connection string for Azure storage |
-| `BLOB_CONTAINER_NAME` | `documents` | Default container name |
-| `LOCAL_STORAGE_PATH` | `./local_blob_storage` | Path for local filesystem storage |
-
-## Storage Options
-
-### Option 1: Azurite (Azure Storage Emulator) - Recommended
-
-```bash
-# Install Azurite
-npm install -g azurite
-
-# Start Azurite
-azurite --silent --location ./azurite-data --debug ./azurite-debug.log
-```
-
-### Option 2: Local Filesystem Storage
-
-No additional setup required:
-
-```bash
-export STORAGE_MODE=local
+┌──────────────────────────────────────────────────────────┐
+│                     FastAPI Server                        │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│   /upload              /chat                /search      │
+│      │                   │                     │         │
+│      ▼                   ▼                     │         │
+│  ┌────────┐      ┌─────────────┐               │         │
+│  │Document│      │ RAG Pipeline│               │         │
+│  │Processor      │             │               │         │
+│  └───┬────┘      │ 1. Search   │◀──────────────┘         │
+│      │           │ 2. Rerank   │                         │
+│      ▼           │ 3. Guard    │                         │
+│  ┌────────┐      │ 4. Generate │                         │
+│  │Semantic│      └──────┬──────┘                         │
+│  │Chunker │             │                                │
+│  └───┬────┘             ▼                                │
+│      │           ┌─────────────┐                         │
+│      ▼           │   Ollama    │                         │
+│  ┌────────┐      │  llama3.2   │                         │
+│  │Embedding      └─────────────┘                         │
+│  │Generator│                                             │
+│  └───┬────┘                                              │
+│      │                                                   │
+│      ▼                                                   │
+│  ┌────────┐                                              │
+│  │ChromaDB│                                              │
+│  │(Vector)│                                              │
+│  └────────┘                                              │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## REST API Usage
+## RAG/LLM Design Decisions
 
-### Start the API Server
+### Chunking Strategy
 
-```bash
-# Start with local filesystem storage
-blob-storage --mode local serve
+**Choice:** Semantic chunking with sliding window
 
-# Or with custom host/port
-blob-storage --mode local serve --host 127.0.0.1 --port 8080
-
-# Enable auto-reload for development
-blob-storage --mode local serve --reload
-```
-
-The API will be available at `http://localhost:8000` with:
-- **Interactive docs**: http://localhost:8000/docs
-- **OpenAPI spec**: http://localhost:8000/openapi.json
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Health check |
-| `GET` | `/health` | Detailed health status |
-| `GET` | `/status` | Storage status and configuration |
-| `POST` | `/upload` | Upload a single file |
-| `POST` | `/upload/multiple` | Upload multiple files |
-| `GET` | `/files` | List all files |
-| `GET` | `/files/{name}` | Download a file |
-| `GET` | `/files/{name}/info` | Get file information |
-| `DELETE` | `/files/{name}` | Delete a file |
-| `POST` | `/containers/{name}` | Create a container |
-| `GET` | `/containers/{name}/files` | List files in container |
-
-### Example API Requests
-
-#### Upload a file
-
-```bash
-curl -X POST "http://localhost:8000/upload" \
-  -F "file=@document.pdf"
-```
-
-#### Upload with custom name
-
-```bash
-curl -X POST "http://localhost:8000/upload?blob_name=reports/2024/doc.pdf" \
-  -F "file=@document.pdf"
-```
-
-#### Upload multiple files
-
-```bash
-curl -X POST "http://localhost:8000/upload/multiple" \
-  -F "files=@file1.pdf" \
-  -F "files=@file2.pdf"
-```
-
-#### List all files
-
-```bash
-curl "http://localhost:8000/files"
-```
-
-#### Download a file
-
-```bash
-curl -O "http://localhost:8000/files/document.pdf"
-```
-
-#### Get file info
-
-```bash
-curl "http://localhost:8000/files/document.pdf/info"
-```
-
-#### Delete a file
-
-```bash
-curl -X DELETE "http://localhost:8000/files/document.pdf"
-```
-
-#### Create a container
-
-```bash
-curl -X POST "http://localhost:8000/containers/my-container"
-```
-
-### Python Client Example
+**Why:** Fixed-size chunking breaks sentences mid-thought. Semantic chunking detects topic shifts using embedding similarity and creates natural boundaries.
 
 ```python
-import requests
+# Sliding window compares embeddings before/after each sentence
+similarity = cosine_similarity(before_window_avg, after_window_avg)
+if similarity < threshold:  # Topic shift
+    create_chunk_boundary()
+```
 
-BASE_URL = "http://localhost:8000"
+**Config:** `max_chunk_size=5000`, `similarity_threshold=0.8`
 
-# Upload a file
-with open("document.pdf", "rb") as f:
-    response = requests.post(f"{BASE_URL}/upload", files={"file": f})
-    print(response.json())
+---
 
-# List files
-response = requests.get(f"{BASE_URL}/files")
-print(response.json())
+### Embedding Choice
 
-# Download a file
-response = requests.get(f"{BASE_URL}/files/document.pdf")
-with open("downloaded.pdf", "wb") as f:
-    f.write(response.content)
+**Model:** `all-MiniLM-L6-v2` (Sentence Transformers)
 
-# Delete a file
-response = requests.delete(f"{BASE_URL}/files/document.pdf")
-print(response.json())
+| Reason | Detail |
+|--------|--------|
+| Speed | ~1ms per embedding |
+| Size | 80MB (container-friendly) |
+| Quality | 384 dims, 1B+ training pairs |
+| License | Apache 2.0 |
+
+---
+
+### Prompt Structure
+
+```
+SYSTEM: Answer questions using ONLY the provided context.
+        Cite sources as [Chunk N]. Say "I don't know" if unsure.
+
+USER:   CONTEXT:
+        [Chunk 1] Source: doc.pdf (relevance: 85%)
+        <chunk content>
+        
+        QUESTION: {query}
+```
+
+This grounds the LLM in retrieved context and encourages citations.
+
+---
+
+### Guardrails Implemented
+
+| Guardrail | What It Does |
+|-----------|--------------|
+| Query Validation | Rejects empty/too-short queries |
+| Relevance Check | Ensures context meets min threshold (0.10) |
+| Confidence Score | Rates answer as High/Medium/Low/None |
+| Fallback Response | Graceful "I don't know" when no context |
+| Source Attribution | Auto-adds citations to answers |
+| Context Truncation | Limits context to prevent LLM timeout |
+
+---
+
+## Key Technical Decisions
+
+| What | Choice | Why |
+|------|--------|-----|
+| Vector DB | ChromaDB | Embedded, no server, persistent storage |
+| LLM | Ollama + llama3.2 | Free, local, fast on Mac (Metal) |
+| Framework | FastAPI | Auto-docs, async, type validation |
+| Deploy | Docker Compose | Simple, reproducible |
+| Re-ranking | Cross-Encoder | Improves retrieval precision |
+
+---
+
+## How I Used AI Tools
+
+**Tool:** Cursor + Claude
+
+**AI helped with:**
+- FastAPI boilerplate generation
+- Semantic chunking algorithm implementation
+- Docker networking debugging
+- Error handling patterns
+- Documentation writing
+
+**My workflow:**
+1. Describe feature requirements
+2. AI generates initial code
+3. Test and identify issues
+4. Iterate with AI assistance
+
+**Human judgment needed for:**
+- Threshold tuning (relevance, confidence)
+- Chunk size optimization
+
+---
+
+## What I'd Do Differently
+
+1. **Hybrid Search** - Add BM25 for exact keyword matching
+2. **Streaming** - SSE for real-time token output
+3. **Query Expansion** - LLM-powered synonym expansion
+4. **Spell Check** - Pre-process queries for typos
+5. **Caching** - Redis for embeddings and frequent queries
+6. **Evaluation** - RAGAs metrics for quality testing
+7. **UI** - Admin dashboard for monitoring
+
+---
+
+## Running Instructions
+
+### Prerequisites
+- Docker
+- Ollama: https://ollama.ai
+
+### Start
+
+```bash
+# Terminal 1: Start Ollama
+ollama serve
+ollama pull llama3.2
+
+# Terminal 2: Start app
+cd assignment
+docker compose -f docker-compose.simple.yml up -d
+```
+
+### Test
+
+```bash
+# Health check
+curl http://localhost:8080/
+
+# Upload document
+curl -X POST http://localhost:8080/upload -F 'file=@document.pdf'
+
+# Check index
+curl http://localhost:8080/index/stats
+
+# Ask question
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What cheeses are made from goat milk?"}'
+
+# View logs
+docker logs rag-app -f
+```
+
+### Stop
+
+```bash
+docker compose -f docker-compose.simple.yml down
+```
+
+### Clear Index
+
+```bash
+curl -X DELETE http://localhost:8080/index/clear
 ```
 
 ---
 
-## CLI Usage
+## Sample Data
 
-### Check status
+A sample dataset is included for testing: `sample_data/cheese.csv`
+
+**Dataset:** 1,187 cheeses from around the world with attributes like milk type, country, texture, and flavor.
+
+### Upload Sample Data
 
 ```bash
-blob-storage --mode local status
+curl -X POST http://localhost:8080/upload -F 'file=@sample_data/cheese.csv'
 ```
 
-### Upload a document
+### Example Queries
+
+Once the cheese dataset is uploaded, try these questions:
+
+| Query | What It Tests |
+|-------|---------------|
+| `"What cheeses are made from goat milk?"` | Filtering by attribute |
+| `"Which French cheeses have a soft texture?"` | Multi-attribute query |
+| `"What cheese pairs well with wine?"` | Subjective/recommendation |
+| `"Tell me about Brie"` | Specific entity lookup |
+| `"What's the difference between cheddar and gouda?"` | Comparison query |
+| `"List blue cheeses from Italy"` | Country + type filter |
+
+### Example Chat Request
 
 ```bash
-# Upload a single file
-blob-storage upload ./path/to/document.pdf
-
-# Upload with custom name
-blob-storage upload ./document.pdf --name "reports/2024/annual-report.pdf"
-
-# Upload to specific container
-blob-storage upload ./document.pdf --container my-container
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What French cheeses are made from sheep milk?",
+    "n_results": 5,
+    "use_reranking": true
+  }'
 ```
 
-### Upload multiple documents
+### Multi-turn Conversation
 
 ```bash
-# Upload all files from a directory
-blob-storage upload-dir ./documents/
-
-# Upload with file pattern
-blob-storage upload-dir ./documents/ --pattern "*.pdf"
-
-# Upload recursively
-blob-storage upload-dir ./documents/ --recursive
-```
-
-### List documents
-
-```bash
-# List all documents
-blob-storage list
-
-# List as JSON
-blob-storage list --json-output
-```
-
-### Download a document
-
-```bash
-blob-storage download document.pdf ./downloaded.pdf
-```
-
-### Delete a document
-
-```bash
-blob-storage delete document.pdf --yes
-```
-
-### Start API server
-
-```bash
-blob-storage --mode local serve --port 8000
+curl -X POST http://localhost:8080/chat/conversation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "What is Roquefort?"},
+      {"role": "assistant", "content": "Roquefort is a French blue cheese made from sheep milk..."},
+      {"role": "user", "content": "What other cheeses are similar to it?"}
+    ]
+  }'
 ```
 
 ---
 
-## Programmatic Usage
+## Testing Strategy
 
-### Using the Storage Classes
+### Approach
 
-```python
-from blob_storage import get_blob_storage
+**Unit tests** for each module with **mocking** for external dependencies:
 
-# Get storage instance
-storage = get_blob_storage("local")  # or "azurite"
+| Module | Test Strategy |
+|--------|---------------|
+| `chunker.py` | Test chunk boundaries, size limits, metadata |
+| `embeddings.py` | Test dimension, similarity properties |
+| `vector_store.py` | Test CRUD with temp directories |
+| `guardrails.py` | Test validation rules, confidence scoring |
+| `rag.py` | Mock LLM and vector store, test pipeline logic |
+| `reranker.py` | Test score combination, ordering |
+| `api.py` | Integration tests with TestClient |
 
-# Upload a file
-result = storage.upload_file("./document.pdf")
-print(f"Uploaded: {result['blob_name']}")
+### Key Testing Patterns
 
-# Upload raw data
-data = b"Hello, World!"
-result = storage.upload_data(data, "hello.txt")
-
-# List all blobs
-blobs = storage.list_blobs()
-for blob in blobs:
-    print(f"{blob['name']} - {blob['size']} bytes")
-
-# Download a file
-storage.download_file("document.pdf", "./downloaded.pdf")
-
-# Check if blob exists
-if storage.blob_exists("document.pdf"):
-    print("Document exists!")
-
-# Delete a blob
-storage.delete_blob("document.pdf")
-```
-
-### Using the FastAPI App
-
-```python
-from blob_storage import create_app, run_server
-
-# Get the FastAPI app instance
-app = create_app()
-
-# Or run the server directly
-run_server(host="0.0.0.0", port=8000, reload=True)
-```
-
----
-
-## Development
+1. **Fixtures** - Shared setup (temp dirs, mock objects)
+2. **Mocking** - Isolate LLM/DB calls for fast tests
+3. **Parametrization** - Test multiple inputs
+4. **Edge cases** - Empty inputs, Unicode, large data
 
 ### Running Tests
 
 ```bash
-# Install dev dependencies
+source venv/bin/activate
 pip install -e ".[dev]"
 
 # Run all tests
@@ -337,52 +316,40 @@ pytest
 pytest --cov=blob_storage --cov-report=html
 
 # Run specific test file
-pytest tests/test_api.py -v
-```
+pytest tests/test_guardrails.py -v
 
-### Code Formatting
-
-```bash
-# Format code
-black src tests
-isort src tests
-
-# Lint code
-ruff check src tests
-mypy src
+# Run specific test
+pytest tests/test_chunker.py::TestSemanticChunker -v
 ```
 
 ---
 
-## Troubleshooting
+## Project Structure
 
-### Azurite Connection Error
-
-If you see connection errors when using Azurite mode:
-
-1. Make sure Azurite is running:
-   ```bash
-   azurite --silent --location ./azurite-data
-   ```
-
-2. Check the default port (10000) is available
-
-3. Verify the connection string in `.env`
-
-### Switch to Local Storage
-
-If Azurite is not available:
-
-```bash
-blob-storage --mode local upload ./document.pdf
 ```
-
-Or set in environment:
-
-```bash
-export STORAGE_MODE=local
+assignment/
+├── src/blob_storage/
+│   ├── api.py            # FastAPI endpoints
+│   ├── chunker.py        # Semantic chunking
+│   ├── embeddings.py     # Sentence embeddings
+│   ├── vector_store.py   # ChromaDB
+│   ├── rag.py            # RAG pipeline
+│   ├── llm.py            # Ollama client
+│   ├── reranker.py       # Cross-encoder
+│   └── guardrails.py     # Safety checks
+├── tests/
+│   ├── test_api.py       # API endpoint tests
+│   ├── test_storage.py   # Storage tests
+│   ├── test_chunker.py   # Chunking tests
+│   ├── test_embeddings.py # Embedding tests
+│   ├── test_vector_store.py # Vector store tests
+│   ├── test_rag.py       # RAG pipeline tests
+│   ├── test_guardrails.py # Guardrails tests
+│   ├── test_reranker.py  # Reranker tests
+│   └── test_llm.py       # LLM tests
+├── sample_data/
+│   └── cheese.csv        # Sample dataset (1,187 cheeses)
+├── docker-compose.simple.yml
+├── Dockerfile
+└── README.md
 ```
-
-## License
-
-MIT License
